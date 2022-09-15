@@ -1,0 +1,400 @@
+---
+title: "machine-learning-2"
+author: "Ceren Ungan"
+date: "9/15/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r, include=FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(car)
+library(gam)
+library(glmnet)
+library(tree)
+library(randomForest)
+#install.packages("randomForest")
+
+
+
+setwd("C:/Users/knowhow/Documents/northwestern/Dersler/Spring 21/Machine Learning 1/student")
+d1=read.table("student-mat.csv",sep=";",header=TRUE)
+```
+
+### Data Preparation and Exploratorary Analysis
+
+##### Converting yes/no values to 1, 0. 
+
+```{r}
+# Data Prep
+
+d1$higher = ifelse(d1$higher == "yes", 1,0)
+d1$internet = ifelse(d1$internet == "yes", 1,0)
+d1$romantic = ifelse(d1$romantic == "yes", 1,0)
+d1$schoolsup = ifelse(d1$schoolsup == "yes", 1,0)
+d1$famsup = ifelse(d1$famsup == "yes", 1,0)
+d1$paid = ifelse(d1$paid == "yes", 1,0)
+d1$activities = ifelse(d1$activities == "yes", 1,0)
+d1$nursery = ifelse(d1$nursery == "yes", 1,0)
+d1$sex = ifelse(d1$sex == "M", 1,0)
+```
+
+##### Correlation Matrix 
+
+```{r}
+d1_matrix <- d1 %>%
+  select_if(is.numeric) %>%
+  cor(.)
+
+library(corrplot)
+
+
+corrplot(d1_matrix)
+```
+
+
+```{r}
+d1$Mjob = as.factor(d1$Mjob)
+d1$Fjob = as.factor(d1$Fjob)
+d1$reason  = as.factor(d1$reason)
+d1$guardian = as.factor(d1$guardian)
+d1$famsize = as.factor(d1$famsize)
+```
+
+##### Creating the Dependent Variable 
+G1, G2, G3 are math scores of the students during one academic term. The dependent variable I am creating is the average of these three scores noted as "grade". 
+
+For logstic regression and decision tree, a binary pass/fail dependent variable is created. 
+
+```{r}
+d1$grade = (d1$G1 + d1$G2 + d1$G3)/3
+d1$pass = ifelse(d1$grade>13, 1,0) # 1:pass, 0:fail
+```
+
+##### Exploring Variable Distributions
+Checking for skewness to decide on necessary transformations. 
+
+```{r}
+# Variable Distributions
+
+str(d1)
+# Grade, School, Sex
+
+barplot(table(d1$grade)) # DV Distribution
+barplot(table(d1$school), main="School Distribution",
+        xlab="Schools")
+barplot(table(d1$sex), main="Male Female Student Distribution",
+        xlab="Sex")
+
+# Family Size
+counts <- table(d1$famsize)
+barplot(counts, main="Family Distribution",
+        xlab="Family")
+```
+
+
+```{r}
+# Histograms
+hist(d1$traveltime) #skewed
+hist(d1$studytime) #skewed
+hist(d1$Medu) #skewed?
+hist(d1$Fedu) #skewed?
+hist(d1$failures) #skewed
+hist(d1$famrel) #skewed
+hist(d1$freetime) #skewed
+hist(d1$goout)
+hist(d1$Dalc) #skewed
+hist(d1$Walc) #skewed
+hist(d1$health) #skewed
+hist(d1$absences) #skewed
+hist(d1$G1)
+hist(d1$G2)
+hist(d1$G3)
+
+hist(d1$grade)
+```
+
+##### Transforming variables to get rid of the skewness
+
+```{r}
+# Transformation of the skewed variables.
+d1$lFedu = log(d1$Fedu+1)
+d1$Medu2 = d1$Medu^2
+d1$ltraveltime = log(d1$traveltime)
+d1$lstudytime = log(d1$studytime)
+d1$lfailures = log(d1$failures+1)
+d1$lfamrel = log(d1$famrel)
+d1$labsences = log(d1$absences+1)
+d1$lhealth = log(d1$health)
+d1$lWalc = log(d1$Walc)
+d1$lDalc = log(d1$Dalc)
+d1$lfreetime = log(d1$freetime)
+
+```
+
+### Fitting Models
+
+##### Multiple  Linear Regression
+
+```{r}
+# MODELS
+
+fit = lm(grade ~., d1)
+summary(fit)
+vif(fit)
+plot(fit)
+```
+##### GLM with Splines
+
+```{r}
+#GLM with splines 
+
+fit2 = lm(grade~bs(age)+age+bs(Medu2)+Medu2+bs(lFedu)+ lFedu+Mjob + Fjob+reason+guardian
+           +bs(ltraveltime)+ltraveltime+s(lstudytime)+ lstudytime +bs(lfailures)+lfailures
+          +bs(lfamrel)+lfamrel+ bs(labsences)+labsences + bs(lhealth)+lhealth + bs(lWalc)+lWalc 
+          + bs(lDalc)+lDalc +bs(goout)+goout + bs(lfreetime)+lfreetime,data=d1)
+anova(fit2)
+summary(fit2)
+plot(fit2)
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(d1, aes(labsences,grade)) +
+  geom_point(cex=.9) +
+  geom_smooth(method="gam")+ stat_smooth(method = "gam", formula = y ~ s(x, k=10), size = 1)
+
+ggplot(d1, aes(studytime,grade)) +
+  geom_point(cex=.9) + geom_jitter()+ stat_smooth(method = "gam", formula = y ~ s(x, k=4), size = 1)
+
+plot(d1$schoolsup,d1$grade)
+```
+
+##### MLR with transformed variables
+
+```{r}
+# Linear Regression Model with transformed variables.
+fit4 = lm(grade~school+sex+age+address+famsize 
+          +Pstatus+I(Medu^2)+log(Fedu+1)+Mjob + Fjob+reason+guardian
+          +log(traveltime)+log(studytime)+log(failures+1)+schoolsup+famsup
+          +paid+ activities
+          + nursery+higher+internet+romantic+log(famrel)+ log(absences+1) +log(health) 
+          + log(Walc) + log(Dalc) +goout + log(freetime),data=d1)
+
+summary(fit4)
+plot(fit4)
+vif(fit4)
+```
+
+
+```{r, include = FALSE}
+fitC = lm(grade~famsup, data = d1)
+summary(fitC)
+
+fitD = lm(grade~famsup+ lfailures, data = d1)
+summary(fitD)
+
+fitE = lm(schoolsup~lfailures, data = d1)
+summary(fitE)
+
+fitF = lm(grade~lfailures+schoolsup, data = d1)
+summary(fitF)
+
+fitG = lm(grade~schoolsup, data = d1)
+summary(fitG)
+
+fc = lm(grade~lfailures, data = d1)
+summary(fc)
+
+fitH = lm(schoolsup~grade, data = d1)
+summary(fitH)
+
+fitI = lm(famsup~famsize + lstudytime+sex+Walc +lfreetime +traveltime +G1 +school +Fedu +paid, data = d1)
+summary(fitI)
+```
+
+##### Stepwise Regression 
+```{r}
+# Stepwise Regression Model
+
+fit5 = step(fit4)
+
+fit5$coefficients
+
+fitQ = lm(grade~sex+age+address+I(Medu^2)+Mjob +log(studytime)+log(failures+1)+schoolsup+famsup
+          +higher+romantic+ log(absences+1) +log(health)+goout,data=d1)
+summary(fitQ)
+```
+##### Ridge Regression
+
+```{r}
+#RIDGE Regression
+d3 = d1[c(-1,-4,-5,-6,-7,-8,-13,-14,-15,-24,-25,-27,-28,-30,-33,-32,-31,-34,-35)]
+d4=d1[c(1,4)]
+
+
+cor(d1$traveltime,d1$studytime)
+
+fitridge = cv.glmnet(data.matrix(d3, rownames.force = NA), d1$grade, alpha=0, nfolds=5)
+fitridge1 = glmnet(data.matrix(d3, rownames.force = NA), d1$grade, alpha=0)
+print(fitridge$lambda.min)
+plot(fitridge)
+plot(fitridge1,xvar="lambda")
+
+mse.min_ridge <- fitridge$cvm[fitridge$lambda == fitridge$lambda.min]
+mse.min_ridge
+coef(fitridge)
+
+```
+
+#### Lasso
+
+```{r}
+#LASSO
+
+fitlasso = cv.glmnet(data.matrix(d3, rownames.force = NA), d1$grade, alpha=1, nfolds=5)
+fitlasso1 = glmnet(data.matrix(d3, rownames.force = NA), d1$grade, alpha=1)
+print(fitlasso$lambda.min)
+plot(fitlasso)
+plot(fitlasso1,xvar="lambda")
+coef(fitlasso)
+```
+
+#### Decision Trees and Random Forest
+
+```{r}
+# TREES / RF
+
+d1$pass = ifelse(d1$G3>13, 1,0) # 1:pass, 0:fail
+d1$drop = ifelse(d1$G3==0, 1,0) # 1: dropped class, 0: continues
+
+
+tree1 = tree(grade~.-G3,data=d1) 
+par(mfrow=c(1,2))
+plot(tree1)
+
+print(tree1)
+```
+
+
+```{r}
+tree2 = tree(pass~.-G3-G2-G1-grade,data=d1) 
+par(mfrow=c(1,2))
+plot(tree2)
+text(tree2, cex=.8)
+tree2
+
+```
+
+
+```{r}
+tree3 = tree(grade~school+sex+age+address+famsize+Pstatus+Medu2+lFedu+reason+ltraveltime+lstudytime+lfailures+schoolsup+famsup+paid+ activities+ nursery+higher+internet+romantic+lfamrel
++labsences +lhealth + lWalc + lDalc +goout +lfreetime, data=d1)
+
+print(tree3)
+table(d1$Medu2)
+```
+
+##### Boosted Tree
+
+```{r}
+#cor(d1$freetime,d1$activities)
+#install.packages("gbm")
+library(gbm)
+d1$famsize <- as.numeric(d1$famsize)
+d1$reason <- as.factor(d1$famsize)
+btree = gbm(grade~sex+age+famsize+Medu2+lFedu+reason+ltraveltime+lstudytime+lfailures+schoolsup+famsup+paid+ activities+ nursery+higher+internet+romantic+lfamrel
+            +labsences +lhealth + lWalc + lDalc +goout +lfreetime, data=d1)
+btree
+
+```
+
+##### Random Forest
+
+```{r}
+# Random Forest 1
+
+forest1 = randomForest(factor(pass)~school+sex+age+address+famsize 
+                      +Pstatus+Medu2+lFedu + Mjob + Fjob+reason+guardian
+                      +ltraveltime+lstudytime+lfailures+schoolsup+famsup
+                      +paid+ activities+ nursery+higher+internet+romantic+lfamrel
+                      +labsences +lhealth + lWalc + lDalc +goout +lfreetime,importance = T, data=d1)
+varImpPlot(forest1)
+forest1
+```
+
+
+```{r}
+# Random Forest 2
+
+forest2 = randomForest(grade~school+sex+age+address+famsize 
+                   +Pstatus+Medu2+lFedu + Mjob + Fjob+reason+guardian
+                   +ltraveltime+lstudytime+lfailures+schoolsup+famsup
+                   +paid+ activities+ nursery+higher+internet+romantic+lfamrel
+                   +labsences +lhealth + lWalc + lDalc +goout +lfreetime,importance = T, data=d1)
+```
+
+###### Variable Importance Plot
+```{r}
+varImpPlot(forest2)
+
+print(forest2)
+forest2
+```
+
+##### Logistic Regression
+```{r}
+# Logistic Regression with Pass DV
+
+fit8 = glm(pass~school+sex+age+address+famsize 
+           +Pstatus+I(Medu^2)+log(Fedu+1)+Mjob + Fjob+reason+guardian
+           +log(traveltime)+log(studytime)+log(failures+1)+schoolsup+famsup
+           +paid+ activities
+           + nursery+higher+internet+romantic+log(famrel)
+           + log(absences+1) +log(health) + log(Walc) + log(Dalc) +goout + log(freetime),family = binomial, data=d1)
+summary(fit8)
+fit8
+
+#install.packages("lmtest")
+library(lmtest)
+lrtest(fit8)
+```
+
+##### Stepwise Regression (Logistic)
+```{r}
+# Stepwise Regression Model
+
+fit9 = step(fit8)
+fit9$coefficients
+```
+
+##### Clustering Students
+```{r, include = FALSE}
+# K-means Cluster - Students
+cluster_data = d1
+is.na(cluster_data)
+
+library(cluster)
+set.seed(12345)
+fit_clust = kmeans(d1_matrix, 3, 100,100)
+summary(fit_clust)
+
+fit_clust
+cluster_data
+```
+
+```{r, include = FALSE}
+#library(ggpubr)
+#library(factoextra)
+#fviz_cluster(fit_clust, data = cluster_data,
+             #palette = c("#2E9FDF", "#00AFBB", "#E7B800"), 
+             #geom = "point",
+             #ggtheme = theme_bw()
+             #)
+
+```
+
